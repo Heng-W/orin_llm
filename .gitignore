@@ -1,0 +1,7 @@
+# build artifacts
+/build/
+tmp/
+*.o
+*.a
+*.so
+chat_cli
