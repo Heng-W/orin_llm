@@ -157,8 +157,15 @@ public:
 
     int send(const std::string& prompt);
     int generate(on_new_token_t on_new_token);
-    
+
+    void forward_batch(const int32_t* token_ids, size_t token_ids_len);
+    void forward(int32_t token_id);
+
+    void reset() { n_past_ = 0; }
+
 private:
+    void shift_kv_cache();
+
     EngineParams   params_;
     GGUF           gguf_;
     Tokenizer      tok_;
@@ -215,6 +222,30 @@ void Engine::impl::print_info() const {
     model_.print_memory();
 }
 
+void Engine::impl::shift_kv_cache() {
+    int n_discard = (n_past_ - n_keep_clamped_) / 2;
+    model_.kv_shift(n_keep_clamped_, n_discard);
+    n_past_ -= n_discard;
+}
+
+void Engine::impl::forward_batch(const int32_t* token_ids, size_t token_ids_len) {
+    const int32_t* token_ids_end = token_ids + token_ids_len;
+    while (token_ids != token_ids_end) {
+        if (n_past_ >= n_ctx_) shift_kv_cache();
+        int chunk = std::min(n_ctx_ - n_past_, (int)(token_ids_end - token_ids));
+        chunk = std::min(chunk, params_.n_batch);
+        if (chunk <= 0) chunk = 1;
+        logits_ = model_.forward_batch(token_ids, chunk, n_past_);
+        n_past_ += chunk;
+        token_ids += chunk;
+    }
+}
+
+void Engine::impl::forward(int32_t token_id) {
+    if (n_past_ >= n_ctx_) shift_kv_cache();
+    logits_ = model_.forward(token_id, n_past_++);
+}
+
 int Engine::impl::send(const std::string& prompt) {
     auto user_ids = tmpl_.apply(tok_, "user", prompt, true);
     auto asst_ids = tmpl_.apply(tok_, "assistant", "", false);
@@ -224,27 +255,12 @@ int Engine::impl::send(const std::string& prompt) {
     if (n_past_ == 0) {
         if (tmpl_.needs_bos() && tok_.bos_id >= 0) ids.push_back(tok_.bos_id);
         ids.insert(ids.end(), sys_ids_.begin(), sys_ids_.end());
-        sys_ids_.clear();
     }
     ids.insert(ids.end(), user_ids.begin(), user_ids.end());
     ids.insert(ids.end(), asst_ids.begin(), asst_ids.end());
 
-    int total = 0;
-    for (size_t off = 0; off < ids.size();) {
-        if (n_past_ >= n_ctx_) {
-            int n_discard = (n_past_ - n_keep_clamped_) / 2;
-            model_.kv_shift(n_keep_clamped_, n_discard); // shift kv cache
-            n_past_ -= n_discard;
-        }
-        int chunk = std::min(n_ctx_ - n_past_, (int)(ids.size() - off));
-        chunk = std::min(chunk, params_.n_batch);
-        if (chunk <= 0) chunk = 1;
-        logits_ = model_.forward_batch(ids.data() + off, chunk, n_past_);
-        n_past_ += chunk;
-        off += chunk;
-        total += chunk;
-    }
-    return total;
+    forward_batch(ids.data(), ids.size());
+    return (int)ids.size();
 }
 
 int Engine::impl::generate(on_new_token_t on_new_token) {
@@ -252,20 +268,14 @@ int Engine::impl::generate(on_new_token_t on_new_token) {
     const int32_t eos = tmpl_.effective_eos(tok_);
     int n_gen = 0;
 
-    while (params_.n_predict < 0 || n_gen < params_.n_predict) {
+    while (true) {
         int32_t next = sampler_.sample(logits_, n_vocab);
         if (next == eos) break;
-
+        ++n_gen;
         std::string text = tok_.decode(next);
         if (on_new_token && !on_new_token(text)) break;
-        if (n_past_ >= n_ctx_) {
-            const int n_discard = (n_past_ - n_keep_clamped_) / 2;
-            model_.kv_shift(n_keep_clamped_, n_discard);
-            n_past_ -= n_discard;
-        }
-        logits_ = model_.forward(next, n_past_);
-        ++n_past_;
-        ++n_gen;
+        if (params_.n_predict >= 0 && n_gen >= params_.n_predict) break;
+        forward(next);
     }
     return n_gen;
 }
@@ -277,8 +287,12 @@ Engine::~Engine() = default;
 
 void Engine::load(const std::string& model_path, const EngineParams& params) { pimpl_->load(model_path, params); }
 void Engine::print_info() const { pimpl_->print_info(); }
+void Engine::reset() { pimpl_->reset(); }
 
 int Engine::send(const std::string& prompt) { return pimpl_->send(prompt); }
 int Engine::generate(on_new_token_t on_new_token) { return pimpl_->generate(on_new_token); }
+
+void Engine::forward_batch(const int32_t* token_ids, size_t token_ids_len) { pimpl_->forward_batch(token_ids, token_ids_len); }
+void Engine::forward(int32_t token_id) { pimpl_->forward(token_id); }
 
 } // namespace llm

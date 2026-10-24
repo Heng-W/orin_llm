@@ -46,9 +46,13 @@ public:
 
     void load(const std::string& model_path, const EngineParams& params = {});
     void print_info() const;
+    void reset();
 
     int send(const std::string& prompt);
     int generate(on_new_token_t on_new_token = nullptr);
+
+    void forward_batch(const int32_t* token_ids, size_t token_ids_len);
+    void forward(int32_t token_id);
 
 private:
     struct impl;
