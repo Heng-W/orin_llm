@@ -52,21 +52,22 @@ int main(int argc, char* argv[]) {
             return -1;
         }
     }
+    std::cout << std::endl;
 
     llm::Engine engine;
     engine.load(argv[1], params);
     engine.print_info();
 
     auto handle_prompt = [&](const std::string& prompt) {
-        auto t0 = std::chrono::steady_clock::now();
+        auto t_start = std::chrono::steady_clock::now();
         int n_prefill = engine.send(prompt);
 
         bool first_token = true;
-        auto t_start_gen = t0;
+        auto t_first_gen = t_start;
         auto on_new_token = [&](const std::string& text) -> bool {
             if (first_token) {
                 first_token = false;
-                t_start_gen = std::chrono::steady_clock::now();
+                t_first_gen = std::chrono::steady_clock::now();
                 std::cout << '\n';
             }
             std::cout << text << std::flush;
@@ -74,16 +75,16 @@ int main(int argc, char* argv[]) {
         };
 
         int n_gen = engine.generate(on_new_token);
-
-        double gen_time = std::chrono::duration<double>(
-                    std::chrono::steady_clock::now() - t_start_gen).count();
-        double start_gen_time = std::chrono::duration<double>(t_start_gen - t0).count();
+        auto t_last_gen = std::chrono::steady_clock::now();
 
         if (n_gen > 0) {
+            double first_gen_time = std::chrono::duration<double>(t_first_gen - t_start).count();
+            double gen_time = std::chrono::duration<double>(t_last_gen - t_first_gen).count();
+            double per_gen_time = n_gen > 1 ? gen_time / (n_gen - 1) : 1e-9;
             printf("\n\n[ Prompt: %d tokens in %.2f ms (%.2f tok/s)"
-                " | Generation: %d tokens in %.2f ms (%.2f tok/s) ]\n",
-                n_prefill, start_gen_time * 1000, n_prefill / start_gen_time,
-                n_gen, gen_time * 1000, n_gen / gen_time);
+                " | Generation: %d tokens, each %.2f ms (%.2f tok/s) | Total: %.2f ms ]\n",
+                n_prefill, first_gen_time * 1000, n_prefill / first_gen_time,
+                n_gen, per_gen_time * 1000, 1 / per_gen_time, (first_gen_time + gen_time) * 1000);
         }
     };
 
