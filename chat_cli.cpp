@@ -29,30 +29,34 @@ static void do_benchmark(llm::Engine& engine, int n_bench, int n_prefill, int n_
     double sum_prefill = 0, sum_decode = 0;
     std::vector<int32_t> dummy_token_ids(n_prefill);
     for (int i = 0; i < (int)dummy_token_ids.size(); ++i) dummy_token_ids[i] = i % 16384;
-
+    // prefill
     for (int iter = 0; iter <= n_bench; ++iter) {
-        // prefill
-        auto t0 = std::chrono::steady_clock::now();
         engine.reset();
+        auto t0 = std::chrono::steady_clock::now();
         engine.forward_batch(dummy_token_ids.data(), dummy_token_ids.size());
         auto t1 = std::chrono::steady_clock::now();
-
-        // decode
-        for (int i = 0; i < n_decode; ++i) engine.forward(i);
-        auto t2 = std::chrono::steady_clock::now();
-
         double prefill_time = n_prefill / std::chrono::duration<double>(t1 - t0).count();
-        double decode_time = n_decode / std::chrono::duration<double>(t2 - t1).count();
-
-        const char* tag = (iter == 0) ? "warmup" : "      ";
-        printf("  [%s] iter %d: prefill %.2f tok/s, decode %.2f tok/s\n", tag, iter, prefill_time, decode_time);
-
-        if (iter > 0) {
+        if (iter == 0) {
+            printf("  warmup: prefill %.2f tok/s\n", prefill_time);
+        } else {
+            printf("  iter %d: prefill %.2f tok/s\n", iter - 1, prefill_time);
             sum_prefill += prefill_time;
-            sum_decode += decode_time;
         }
     }
-    printf("  avg: prefill %.2f tok/s, decode %.2f tok/s\n", sum_prefill / n_bench, sum_decode / n_bench);
+    printf("  avg: prefill %.2f tok/s\n\n", sum_prefill / n_bench);
+    // decode
+    engine.reset();
+    engine.forward(0); // warmup
+    for (int iter = 0; iter < n_bench; ++iter) {
+        engine.reset();
+        auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < n_decode; ++i) engine.forward(i);
+        auto t1 = std::chrono::steady_clock::now();
+        double decode_time = n_decode / std::chrono::duration<double>(t1 - t0).count();
+        printf("  iter %d: decode %.2f tok/s\n", iter, decode_time);
+        sum_decode += decode_time;
+    }
+    printf("  avg: decode %.2f tok/s\n", sum_decode / n_bench);
 }
 
 int main(int argc, char* argv[]) {
