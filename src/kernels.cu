@@ -601,11 +601,11 @@ __device__ __forceinline__ void load_tiles_q4_K(
         const uint8_t* sc8 = (const uint8_t*)&sc32;
         const uint8_t* m8 = (const uint8_t*)&m32;
 
-        const __half2 dm = __hmul2(make_half2(bxi->d, bxi->dmin), make_half2(1.0f, -1.0f));
+        const __half2 dm = __hmul2(*(const __half2*)&bxi->d, make_half2(1.0f, -1.0f));
 
         #pragma unroll
         for (int l = 0; l < 4; ++l) {
-            half2 val = __hmul2(dm, __halves2half2(__float2half((float)sc8[l]), __float2half((float)m8[l])));
+            half2 val = __hmul2(dm, make_half2(sc8[l], m8[l]));
             x_dm[i * MMQ_X_STRIDE + 4 * ksc + l] = val;
         }
     }
@@ -675,7 +675,9 @@ __device__ __forceinline__ void vec_dot_q4k_mma(
                 for (int l = 0; l < 4; ++l) {
                     const float2 dm = dmA[n][l/2][kq];
                     const float2 ds = dsB[l%2];
-                    sum[(j0/8 + n) * 4 + l] += dm.x * ds.x * (float)C[l] + dm.y * ds.y;
+                    const int idx = (j0/8 + n) * 4 + l;
+                    sum[idx] += dm.x * ds.x * (float)C[l];
+                    sum[idx] += dm.y * ds.y;
                 }
             }
         }
@@ -1715,7 +1717,7 @@ __global__ void add_inplace_broadcast_k(float* a, const float* b, int stride, in
 // ----------------- Host wrappers -----------------------
 
 constexpr int SM_COUNT = 8;
-constexpr size_t SHARED_MEMORY_LIMIT = 48 * 1024; // 48KB
+constexpr size_t SHARED_MEMORY_LIMIT = 100 * 1024; // 100KB, opt-in
 
 constexpr int div_ceil(int n, int d)  { return (n + d - 1) / d; }
 constexpr int align_up(int n, int align)  { return div_ceil(n, align) * align; }
@@ -1884,6 +1886,12 @@ static void mmq_batch_launch(const void* W, const float* X, float* Y,
 
         auto launch_mm = [&](auto check_tag) {
             constexpr bool CHK = decltype(check_tag)::value;
+            static bool smem_raised = false;
+            if (smem_bytes > 48 * 1024 && !smem_raised) {
+                smem_raised = true;
+                CUDA_CHECK(cudaFuncSetAttribute(mul_mat_mmq<TYPE, TN, CHK>,
+                    cudaFuncAttributeMaxDynamicSharedMemorySize, smem_bytes));
+            }
             mul_mat_mmq<TYPE, TN, CHK><<<grid_x, dim3(32, 8), smem_bytes, s_stream>>>(
                 W, (const int*)g_q8_mmq, Y, g_mmq_fixup,
                 n_out, n_in, batch, nb, nb_fd, ntx_fd, SM_COUNT);
@@ -1912,6 +1920,10 @@ static void mmq_batch_launch(const void* W, const float* X, float* Y,
         case 40: launch(std::integral_constant<int, 40>{}); break;
         case 48: launch(std::integral_constant<int, 48>{}); break;
         case 64: launch(std::integral_constant<int, 64>{}); break;
+        case 80: launch(std::integral_constant<int, 80>{}); break;
+        case 96: launch(std::integral_constant<int, 96>{}); break;
+        case 112: launch(std::integral_constant<int, 112>{}); break;
+        case 128: launch(std::integral_constant<int, 128>{}); break;
         default: launch(std::integral_constant<int,  8>{}); break;
     }
 }
