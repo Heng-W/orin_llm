@@ -45,6 +45,7 @@ static void do_benchmark(llm::Engine& engine, int n_bench, int n_prefill, int n_
     }
     printf("  avg: prefill %.2f tok/s\n\n", sum_prefill / n_bench);
     // decode
+    if (n_decode == 0) return;
     engine.reset();
     engine.forward(0); // warmup
     for (int iter = 0; iter < n_bench; ++iter) {
