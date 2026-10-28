@@ -43,6 +43,7 @@ make USE_CPU_ONLY=1  # 纯 CPU 构建，仅用于调试正确性
 | `--top-k N`     | 40    | Top-k 采样                     |
 | `--top-p F`     | 0.95  | Top-p 采样                     |
 | `--bench N`     | -     | 重复 N 次跑 benchmark（第一次是 warmup） |
+| `--dump-logits F`  | -     | dump 最后一个 token 计算的 logits 到文件，用于正确性验证 |
 
 
 ![demo](https://gitee.com/heng_w/imagebed/raw/master/prj/orin_llm/demo.png)
