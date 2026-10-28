@@ -1098,6 +1098,7 @@ static __device__ __forceinline__ int fa_col8(int c) {
 
 static constexpr float SOFTMAX_FTZ_THRESHOLD = -20.0f; // Softmax exp. of values smaller than this are flushed to zero to avoid NaNs.
 static constexpr float FA_KQ_MAX_OFFSET = 3.0f * 0.6931f; // log(2) = 0.6931, by adding this to the KQ maximum used for the softmax the numerical range representable
+static constexpr int FA_PREFILL_NBATCH = 64; // KV positions per main-loop iteration
 
 // MMA-based flash attention decode
 // Grid = n_kv blocks, block = 4 warps. 4 warps cooperating on same Q columns.
@@ -1358,11 +1359,11 @@ __global__ void flash_attention_prefill_mma_k(
     constexpr int QTOKENS_PER_BLOCK = 8;   // Q tokens per block (4 warps * 2)
     constexpr int QTOKENS_PER_WARP  = 2;   // Q tokens per warp
     constexpr int NCOLS_WARP        = 16;  // MMA columns per warp = QTOKENS_PER_WARP * 8
-    constexpr int NBATCH    = 32;  // KV positions per main-loop iteration
+    constexpr int NBATCH    = FA_PREFILL_NBATCH;
     constexpr int DITER     = HDIM / 16;
     constexpr int FA_STRIDE = HDIM / 2 + 4;
     constexpr int NWARPS    = 4;
-    constexpr int NTILES    = 32 / 16;
+    constexpr int NTILES    = NBATCH / 16;
 
     const int kv_head     = blockIdx.x % n_kv;
     const int tile_q_idx  = blockIdx.x / n_kv; // 8-token block index
@@ -1958,7 +1959,7 @@ template <int HDIM>
 static void flash_attention_prefill_launch(const float* q, const uint16_t* kc, const uint16_t* vc, float* out,
                                            int n_head, int n_kv, int head_dim, int n_ctx, int n_past, int batch, float scale) {
     constexpr int QTOKENS_PER_BLOCK = 8;
-    constexpr int NBATCH = 32;
+    constexpr int NBATCH = FA_PREFILL_NBATCH;
     constexpr int FA_STRIDE = HDIM / 2 + 4;
     constexpr int NCOLS_WARP = 16;
     constexpr int NWARPS = 4;
