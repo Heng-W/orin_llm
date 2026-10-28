@@ -54,6 +54,11 @@ public:
     void forward_batch(const int32_t* token_ids, size_t token_ids_len);
     void forward(int32_t token_id);
 
+    std::vector<int32_t> tokenize(const std::string& text, bool add_bos) const;
+
+    const float* logits() const;
+    int n_vocab() const;
+
 private:
     struct impl;
     std::unique_ptr<impl> pimpl_;

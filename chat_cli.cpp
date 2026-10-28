@@ -5,6 +5,7 @@
 #include <iostream>
 #include <chrono>
 #include <vector>
+#include <fstream>
 
 #include "orin_llm/engine.h"
 
@@ -20,7 +21,8 @@ static void usage(const char* proc) {
         << "  -s/--system S  system prompt\n"
         << "  -p/--prompt S  prompt (non-interactive mode)\n"
         << "  --bench N      repeat N iterations for benchmark (first is warmup)\n"
-        << "  --n-prefill N  prefill size for benchmark\n" << std::endl;
+        << "  --n-prefill N  prefill size for benchmark\n"
+        << "  --dump-logits F  dump final logits to files for verification\n" << std::endl;
 }
 
 static void do_benchmark(llm::Engine& engine, int n_bench, int n_prefill, int n_decode) {
@@ -60,6 +62,52 @@ static void do_benchmark(llm::Engine& engine, int n_bench, int n_prefill, int n_
     printf("  avg: decode %.2f tok/s\n", sum_decode / n_bench);
 }
 
+static void dump_logits(llm::Engine& engine, const std::string& prompt, const std::string& base_path) {
+    if (prompt.empty()) return;
+    auto tokens = engine.tokenize(prompt, false);
+    int n_vocab = engine.n_vocab();
+
+    printf("\nInput prompt: \"%s\"\n", prompt.c_str());
+    printf("Token ids (%zu): ", tokens.size());
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        printf("%d%s", tokens[i], i + 1 < tokens.size() ? ", " : "\n");
+    }
+
+    engine.forward_batch(tokens.data(), tokens.size());
+    const float* logits = engine.logits();
+
+    auto save = [&](const char* suffix, auto write_fn) {
+        std::string path = base_path + suffix;
+        std::ofstream f(path, std::ios::binary);
+        if (!f) {
+            fprintf(stderr, "failed to open %s\n", path.c_str());
+            return;
+        }
+        write_fn(f);
+        printf("Saved to %s\n", path.c_str());
+    };
+
+    save(".bin", [&](std::ofstream& f) {
+        f.write(reinterpret_cast<const char*>(logits), n_vocab * sizeof(float));
+    });
+    save(".txt", [&](std::ofstream& f) {
+        for (int i = 0; i < n_vocab; ++i) f << i << ": " << logits[i] << '\n';
+    });
+    save("-prompt.txt", [&](std::ofstream& f) {
+        f << "prompt: " << prompt << '\n';
+        f << "n_tokens: " << tokens.size() << '\n';
+        f << "token ids: ";
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            f << tokens[i];
+            if (i + 1 < tokens.size()) f << ", ";
+        }
+        f << '\n';
+    });
+    save("-tokens.bin", [&](std::ofstream& f) {
+        f.write(reinterpret_cast<const char*>(tokens.data()), tokens.size() * sizeof(int32_t));
+    });
+}
+
 int main(int argc, char* argv[]) {
     if (argc < 2) {
         usage(argv[0]);
@@ -68,6 +116,7 @@ int main(int argc, char* argv[]) {
 
     llm::EngineParams params;
     std::string prompt;
+    std::string dump_logits_path;
     int n_bench = -1;
     int n_prefill = 128, n_decode = 128;
 
@@ -90,6 +139,7 @@ int main(int argc, char* argv[]) {
         else if (a == "-p" || a == "--prompt") prompt = next();
         else if (a == "--bench")     n_bench = (int)std::atoi(next());
         else if (a == "--n-prefill") n_prefill = (int)std::atoi(next());
+        else if (a == "--dump-logits") dump_logits_path = next();
         else {
             std::cerr << "unknown option: " << a << std::endl;
             usage(argv[0]);
@@ -104,6 +154,11 @@ int main(int argc, char* argv[]) {
 
     if (n_bench > 0) {
         do_benchmark(engine, n_bench, n_prefill, n_decode);
+        return 0;
+    }
+
+    if (!dump_logits_path.empty()) {
+        dump_logits(engine, prompt, dump_logits_path);
         return 0;
     }
 

@@ -163,6 +163,12 @@ public:
 
     void reset() { n_past_ = 0; }
 
+    std::vector<int32_t> tokenize(const std::string& text, bool add_bos) const
+    { return tok_.encode(text, add_bos); }
+
+    const float* logits() const { return logits_; }
+    int n_vocab() const { return model_.hparams.n_vocab; }
+
 private:
     void shift_kv_cache();
 
@@ -294,5 +300,11 @@ int Engine::generate(on_new_token_t on_new_token) { return pimpl_->generate(on_n
 
 void Engine::forward_batch(const int32_t* token_ids, size_t token_ids_len) { pimpl_->forward_batch(token_ids, token_ids_len); }
 void Engine::forward(int32_t token_id) { pimpl_->forward(token_id); }
+
+std::vector<int32_t> Engine::tokenize(const std::string& text, bool add_bos) const
+{ return pimpl_->tokenize(text, add_bos); }
+
+const float* Engine::logits() const { return pimpl_->logits(); }
+int Engine::n_vocab() const { return pimpl_->n_vocab(); }
 
 } // namespace llm
