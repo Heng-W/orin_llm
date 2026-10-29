@@ -192,6 +192,14 @@ Decode 快 1.17 倍，FA kernel 本身耗时接近（~11 us），优势来自 or
 
 **辅助算子**：RMSNorm 快 1.3-1.5 倍，Q8 量化快 1.7 倍，RoPE 快 1.6-2.2 倍。这些算子去掉了 llama.cpp 中为通用性所需的多维 stride 索引、类型转换等逻辑，仅保留 Orin 推理所需的最小逻辑。
 
+
+## 正确性与精度
+
+将采样器温度 temp 设置为 0 的贪心解码下，orin\_llm 与 llama.cpp 使用上图中的同一提示词生成 128 个 token 的结果完全一致。
+
+逐层数值对比（16 token 输入，与 llama-debug 逐 tensor 比对）：Embedding、RMSNorm、RoPE 等数值一致；FlashAttention 输出存在微小差异（~1e-3/element），原因是两者在 VKQ（softmax(QK^T)\*V）路径上的累加精度不同：llama.cpp 在 SM\_87 上使用 fp16 累加（`mma.sync.f16.f16.f16.f16`），orin\_llm 使用 fp32 累加（`mma.sync.f32.f16.f16.f32`）；KQ（Q\*K^T）路径两者均为 fp32。将 orin\_llm 临时改为 fp16 累加后差异缩小至 ~1e-5/element，确认 VKQ 累加精度是主要差异来源。orin\_llm 继续保持 fp32 累加以获得更高精度。
+
+
 ## 许可
 
 MIT License，详见 [LICENSE](LICENSE)。
