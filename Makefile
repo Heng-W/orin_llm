@@ -24,4 +24,4 @@ clean:
 	$(MAKE) -C src BUILD=$(CURDIR)/$(BUILD) clean
 	rm -rf $(BUILD) $(TARGET)
 
-.PHONY: all clean
+.PHONY: all clean $(LIB)
