@@ -181,10 +181,10 @@ __global__ void quantize_mmq_q8_1_k(const float* __restrict__ X, void* __restric
 
     const float d_inv = 127.0f / amax;
     char4 q;
-    q.x = __float2int_rn(xi.x * d_inv);
-    q.y = __float2int_rn(xi.y * d_inv);
-    q.z = __float2int_rn(xi.z * d_inv);
-    q.w = __float2int_rn(xi.w * d_inv);
+    q.x = roundf(xi.x * d_inv);
+    q.y = roundf(xi.y * d_inv);
+    q.z = roundf(xi.z * d_inv);
+    q.w = roundf(xi.w * d_inv);
 
     char4* yqs4 = (char4*)y[ib].qs;
     yqs4[iqs / 4] = q;
