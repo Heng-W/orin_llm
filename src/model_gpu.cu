@@ -355,6 +355,7 @@ const float* Model::impl::forward_batch(const int32_t* tokens, int batch, int n_
     cuda::dequant_rows(w_.token_embd->type, d_token_embd_, d_tokens_, d_x_, ne, batch);
 
     const size_t per_layer = (size_t)nkv * n_ctx * hdim;
+    float* d_last_x = d_x_ + (size_t)(batch - 1) * ne;
     for (int l = 0; l < hp_.n_layer; ++l) {
         const Layer& L = w_.layers[l];
         const DevLayer& D = dev_layers_[l];
@@ -385,15 +386,23 @@ const float* Model::impl::forward_batch(const int32_t* tokens, int batch, int n_
         cuda::add_inplace(d_x_, d_o_, batch * ne);
 
         // FFN
-        cuda::rms_norm_rows(d_x_, D.ffn_norm, batch, ne, hp_.rms_eps, d_xn2_);
-        matmul(L.ffn_gate, D.ffn_gate, d_xn2_, d_gate_);
-        matmul(L.ffn_up,   D.ffn_up,   d_xn2_, d_up_);
-        cuda::swiglu(d_act_, d_gate_, d_up_, batch * nff);
-        matmul(L.ffn_down, D.ffn_down, d_act_, d_o_);
-        cuda::add_inplace(d_x_, d_o_, batch * ne);
+        if (l < hp_.n_layer - 1) {
+            cuda::rms_norm_rows(d_x_, D.ffn_norm, batch, ne, hp_.rms_eps, d_xn2_);
+            matmul(L.ffn_gate, D.ffn_gate, d_xn2_, d_gate_);
+            matmul(L.ffn_up,   D.ffn_up,   d_xn2_, d_up_);
+            cuda::swiglu(d_act_, d_gate_, d_up_, batch * nff);
+            matmul(L.ffn_down, D.ffn_down, d_act_, d_o_);
+            cuda::add_inplace(d_x_, d_o_, batch * ne);
+        } else { // only the last token needs final FFN
+            cuda::rms_norm(d_last_x, D.ffn_norm, ne, hp_.rms_eps, d_xn2_);
+            cuda::quantize_activation(d_xn2_, ne);
+            cuda::gemv_fused_gate_up_swiglu(L.ffn_gate->type, D.ffn_gate, D.ffn_up, d_act_, L.ffn_gate->ne0, nff);
+            cuda::quantize_activation(d_act_, nff);
+            cuda::gemv_q8_add(L.ffn_down->type, D.ffn_down, d_last_x, L.ffn_down->ne0, L.ffn_down->ne1);
+        }
     }
 
-    cuda::rms_norm(d_x_ + (size_t)(batch - 1) * ne, d_output_norm_, ne, hp_.rms_eps, d_xn_);
+    cuda::rms_norm(d_last_x, d_output_norm_, ne, hp_.rms_eps, d_xn_);
     cuda::gemv(w_.output->type, d_output_, d_xn_, d_logits_, w_.output->ne0, w_.output->ne1);
 
     CUDA_CHECK(cudaDeviceSynchronize());
