@@ -89,9 +89,9 @@ src/
 数据：
 ```
 [cuda] device: Orin (sm_87, 7.4 GB)
-  memory: 1059.9 MB weights (mapped), 71.5 MB buffers + 896.0 MB KV (n_ctx=32768) | 3823.1 MB free / 7619.9 MB total
+  memory: 1059.9 MB weights (mapped), 71.5 MB buffers + 896.0 MB KV (n_ctx=32768) | 4873.6 MB free / 7619.9 MB total
 
-[ Prompt: 45 tokens in 47.72 ms (943.03 tok/s) | Generation: 128 tokens, each 15.20 ms (65.81 tok/s) | Total: 1977.50 ms ]
+[ Prompt: 45 tokens in 46.97 ms (958.01 tok/s) | Generation: 128 tokens, each 15.17 ms (65.93 tok/s) | Total: 1973.26 ms ]
 ```
 
 ### llama.cpp (commit 9e3b928fd, 2026-06-07, CUDA, 全部层 GPU offload)
@@ -123,8 +123,8 @@ prompt eval time =      58.28 ms /    45 tokens (    1.30 ms per token,   772.08
 
 |             | orin\_llm | llama.cpp | 加速比  |
 | ----------- | --------- | --------- | ----- |
-| TTFT (ms)   | 47.72     | 58.28     | 1.22x |
-| TPOT (ms)   | 15.20     | 24.30     | 1.60x |
+| TTFT (ms)   | 46.97     | 58.28     | 1.24x |
+| TPOT (ms)   | 15.17     | 24.30     | 1.60x |
 
 ## 算子级对比（nsys profiling）
 
