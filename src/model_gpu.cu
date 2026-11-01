@@ -98,7 +98,7 @@ void Model::impl::load(const GGUF& g) {
     uintptr_t data_end   = (uintptr_t)(g.data_end() + page - 1) & ~(page - 1);
     mapped_ptr_  = (void*)data_start;
     mapped_size_ = (size_t)(data_end - data_start);
-    CUDA_CHECK(cudaHostRegister(mapped_ptr_, mapped_size_, cudaHostRegisterMapped));
+    CUDA_CHECK(cudaHostRegister(mapped_ptr_, mapped_size_, cudaHostRegisterMapped | cudaHostRegisterReadOnly));
 
     struct Slot {
         const void* src;

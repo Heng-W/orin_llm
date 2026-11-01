@@ -100,7 +100,7 @@ void GGUF::load(const std::string& path) {
         LLM_ABORT("GGUF: file too small %s", path.c_str());
     }
 
-    uint8_t* base = (uint8_t*)mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    uint8_t* base = (uint8_t*)mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
     if (base == MAP_FAILED) {
         close(fd);
         LLM_ABORT("GGUF: mmap failed %s", path.c_str());
