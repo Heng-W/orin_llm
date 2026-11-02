@@ -126,6 +126,37 @@ prompt eval time =      58.28 ms /    45 tokens (    1.30 ms per token,   772.08
 | TTFT (ms)   | 46.97     | 58.28     | 1.24x |
 | TPOT (ms)   | 15.17     | 24.30     | 1.60x |
 
+
+### 权重内存管理
+
+Orin 的 CPU/GPU 共用 DRAM，测试三种权重内存管理方式：
+
+- **device**：`cudaMalloc` 后从 GGUF mmap 逐 tensor H2D 拷贝
+- **managed**：`cudaMallocManaged` 后同样逐 tensor 拷贝
+- **registered**：只读 mmap + `cudaHostRegisterMapped | cudaHostRegisterReadOnly`，GPU 直接读注册文件页，无权重副本（只读注册避免触发 COW）
+
+使用上面的测试环境，输入 45 token 生成 128 token，在 warmup 后多次测试取平均。
+
+| 路径 | 加载 (ms) | TTFT (ms) | TPOT (ms) |
+|---|---:|---:|---:|
+| device | 809.75 | 44.09 | 15.73 |
+| managed | 948.24 | 44.69 | 16.29 |
+| registered | 487.95 | 43.76 | 15.16 |
+
+在这组测试中，registered 相比 device 路径加载耗时低约 40%，TPOT 吞吐高约 3.8%。managed 相比 device 路径并未显示出优势。
+
+内存（MiB）：
+
+| 路径 | RSS | PSS | MemAvailable 减少 | NvMap |
+|---|---:|---:|---:|---:|
+| device | 1142.9 | 1136.4 | 1463.8 | 3184.6 |
+| managed | 1143.3 | 1136.8 | 1523.9 | 3157.5 |
+| registered | 1142.4 | 1135.9 | 328.5 | 2097.2 |
+
+三者 RSS/PSS 相近，因为 NvMap 权重副本不映射到 CPU 页表。device/managed 的 NvMap 比 registered 多 1060–1087 MB，与权重 1059.89 MB 吻合，即多出一份权重副本。
+
+在本次测试的 llama.cpp CUDA 后端中，`GGML_CUDA_ENABLE_UNIFIED_MEMORY=1` 会使权重及部分非权重 CUDA buffer 改用`cudaMallocManaged` ，但权重仍通过 H2D 拷贝。该开关不会启用本项目的`mmap + cudaHostRegister` 零拷贝路径，CUDA 后端也未接通相应的 host pointer buffer 接口。本次 Orin 测试开启该开关后未观察到明显性能收益，因此以默认`cudaMalloc`路径作为基线。
+
 ## 算子级对比（nsys profiling）
 
 测试模型 Qwen2.5-1.5B Q4\_K\_M，prefill 分别测 45 / 512 token，decode 测 128 token 生成，取 5-6 轮平均。加速比使用舍入前的耗时计算，详细 kernel 数据见 [docs/nsys\_report.md](docs/nsys_report.md)。
