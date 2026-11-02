@@ -215,7 +215,8 @@ void Model::impl::init_buffers(int n_ctx, int max_batch) {
     size_t free_mem = 0, total_mem = 0;
     cudaMemGetInfo(&free_mem, &total_mem);
     const size_t kv_per_ctx = (size_t)hp_.n_layer * nkv * hdim * sizeof(uint16_t) * 2;
-    int max_ctx = (int)(free_mem / kv_per_ctx);
+    const size_t budget = (free_mem > mapped_size_) ? (free_mem - mapped_size_) : 0;
+    int max_ctx = (int)(budget / kv_per_ctx);
     constexpr int MIN_CTX = 4096;
     max_ctx = max_ctx / MIN_CTX * MIN_CTX;
     if (n_ctx > max_ctx) {
