@@ -217,7 +217,7 @@ Orin 的 CPU/GPU 共用 DRAM，测试三种权重内存管理方式：
 **GEMV**：Decode 90% 以上耗时在 GEMV，两边都使用 dp4a、smallK/largeK 分派和 gate+up+SwiGLU 融合。
 1.63 倍加速主要来自 smallK 路径的归约策略差异：orin\_llm smallK 路径每 warp 独立处理一行，仅 warp 内归约；llama.cpp 路径用 4 warps 协作 + shared memory 归约，在主流大 GPU 上可能开销不高，但在 Orin 这种资源受限平台上成为瓶颈。
 对于 Q6\_K output head（K=1536, 6 个量化 block），llama.cpp 因 smallK 阈值不满足而走了更慢的 largeK 路径。
-进行对比实验：改用共享内存归约后 TPOT +37%，强制 Q6\_K output head 走 largeK 后 TPOT +12%。
+进行对比实验：改用共享内存归约后 GEMV smallK 计算耗时 +38.7%，继续强制 Q6\_K output head 走 largeK 后 output head 计算耗时 +12.2%。
 
 **Flash Attention**：MMA (m16n8k16) + online softmax，prefill/decode 各一个专用 kernel。
 Prefill 快 1.3-1.8 倍：每 warp 独立处理 2 个 Q token（无跨 warp 归约），因果掩码内联计算（llama.cpp 需支持多种 mask 模式，从全局内存加载通用 mask）。
